@@ -344,7 +344,12 @@ def parse_title_year(filename: str) -> tuple[str, Optional[int]]:
     series_match = re.search(r'(S\d{1,2}E\d{1,2})', stem, re.IGNORECASE)
     if not series_match:
         series_match = re.search(r'(\d{1,2}x\d{2,3})', stem, re.IGNORECASE)
-    series_tag = series_match.group(1) if series_match else None
+    
+    series_tag = None
+    if series_match:
+        series_tag = series_match.group(1)
+        # Untuk TV series, buang semua string setelah tag episode (cth: .Rookies.REPACK.1080p)
+        stem = stem[:series_match.start()]  # type: ignore[index]
 
     # Detect year — ambil yang PERTAMA ditemukan
     year_match = re.search(r'\b((?:19|20)\d{2})\b', stem)
@@ -382,10 +387,6 @@ def parse_title_year(filename: str) -> tuple[str, Optional[int]]:
 
     # Collapse multiple spaces and strip
     cleaned = re.sub(r'\s+', ' ', cleaned).strip()
-
-    # Build final query: add series episode info if present
-    if series_tag:
-        cleaned = f"{cleaned} {series_tag}".strip()
 
     return (cleaned, year)
 
@@ -616,7 +617,8 @@ def _print_subtitle_table(subs: List[Dict[str, Any]], header: str) -> None:
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 def process_video(video_path: Path, client: SubSourceClient, args: argparse.Namespace,
-                  index: int = 1, total: int = 1) -> str:
+                  index: int = 1, total: int = 1,
+                  title_cache: Optional[Dict[str, Dict[str, Any]]] = None) -> str:
     """Proses 1 file video: search → pilih → list subtitles → download → save.
 
     Returns: "success" | "skip" | "fail"
@@ -650,33 +652,43 @@ def process_video(video_path: Path, client: SubSourceClient, args: argparse.Name
         print(f"  🔸 [DRY RUN] Target: {target_srt}")
         return "success"
 
-    # --- Search API ---
-    try:
-        results = client.search_titles(title, year)
-    except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
-        print(f"  ❌ Network error saat search: {e}")
-        return "fail"
+    if title_cache is None:
+        title_cache = {}
+    cache_key = f"{title}_{year}"
 
-    if args.verbose and results:
-        print(f"  🔧 [VERBOSE] Search response: {json.dumps(results, default=str)[0:500]}")  # type: ignore[index]
+    if cache_key in title_cache:
+        chosen_movie = title_cache[cache_key]
+        print(f"  ⚡ Memakai judul dari cache: {chosen_movie.get('title')} ({chosen_movie.get('releaseYear')})")
+    else:
+        # --- Search API ---
+        try:
+            results = client.search_titles(title, year)
+        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
+            print(f"  ❌ Network error saat search: {e}")
+            return "fail"
 
-    if not results:
-        print(f"  ❌ Tidak ada hasil untuk \"{title}\".")
-        return "fail"
+        if args.verbose and results:
+            print(f"  🔧 [VERBOSE] Search response: {json.dumps(results, default=str)[0:500]}")  # type: ignore[index]
 
-    # --- Pilih judul ---
-    display_results: List[Dict[str, Any]] = list(results)[0:10]  # type: ignore[index]
-    choices = [_format_movie_choice(i, m) for i, m in enumerate(display_results)]
-    prompt = f"Hasil pencarian untuk \"{title}\":"
+        if not results:
+            print(f"  ❌ Tidak ada hasil untuk \"{title}\".")
+            return "fail"
 
-    chosen_idx = choose_from_list(choices, prompt, default_index=0,
-                                  non_interactive=args.non_interactive)
+        # --- Pilih judul ---
+        display_results: List[Dict[str, Any]] = list(results)[0:10]  # type: ignore[index]
+        choices = [_format_movie_choice(i, m) for i, m in enumerate(display_results)]
+        prompt = f"Hasil pencarian untuk \"{title}\":"
 
-    if chosen_idx is None:
-        print("  ⏭  Skip.")
-        return "skip"
+        chosen_idx = choose_from_list(choices, prompt, default_index=0,
+                                      non_interactive=args.non_interactive)
 
-    chosen_movie = display_results[chosen_idx]
+        if chosen_idx is None:
+            print("  ⏭  Skip.")
+            return "skip"
+
+        chosen_movie = display_results[chosen_idx]
+        title_cache[cache_key] = chosen_movie
+
     movie_title = chosen_movie.get("title", "?")
     movie_year = chosen_movie.get("releaseYear", "?")
     movie_type = chosen_movie.get("type", "?")
@@ -710,6 +722,14 @@ def process_video(video_path: Path, client: SubSourceClient, args: argparse.Name
     if not filtered:
         print(f"  ❌ Tidak ada subtitle Indonesia format SRT.")
         return "fail"
+
+    # --- Urutkan subtitle berdasarkan kemiripan dengan nama file video ---
+    def _sub_similarity(sub: Dict[str, Any]) -> float:
+        rel_info = sub.get("releaseInfo", [])
+        rel_str = str(rel_info[0]) if isinstance(rel_info, list) and rel_info else str(rel_info)
+        return difflib.SequenceMatcher(None, filename.lower(), rel_str.lower()).ratio()
+
+    filtered.sort(key=_sub_similarity, reverse=True)
 
     # --- Pilih subtitle ---
     display_subs: List[Dict[str, Any]] = list(filtered)[0:20]  # type: ignore[index]
@@ -922,10 +942,11 @@ def _run_session(input_path: Path, client: SubSourceClient, args: argparse.Names
         print("🔸 Mode DRY RUN aktif — tidak ada file yang akan dimodifikasi.\n")
 
     stats = {"success": 0, "skip": 0, "fail": 0}
+    session_title_cache: Dict[str, Dict[str, Any]] = {}
 
     for i, video in enumerate(videos, start=1):
         try:
-            result = process_video(video, client, args, index=i, total=len(videos))
+            result = process_video(video, client, args, index=i, total=len(videos), title_cache=session_title_cache)
             stats[result] = stats.get(result, 0) + 1
         except KeyboardInterrupt:
             print("\n\n⚠  Dibatalkan oleh user.")
