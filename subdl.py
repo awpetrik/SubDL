@@ -770,7 +770,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _clean_dragged_path(raw: str) -> str:
-    """Bersihkan path hasil drag-and-drop dari terminal.
+    r"""Bersihkan path hasil drag-and-drop dari terminal.
 
     macOS Terminal menambahkan backslash escape untuk banyak karakter:
       /Users/name/My\ Movies\ \(2024\)/file.mkv
