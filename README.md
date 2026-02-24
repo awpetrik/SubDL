@@ -63,9 +63,24 @@ Dependencies: hanya `requests` — tidak ada dependency tambahan di luar standar
 
 ## API Key
 
-Dapatkan API key dari dashboard profil SubSource: [https://subsource.net](https://subsource.net) → Login → Profile → API Key.
+Saat pertama kali menjalankan SubDL, kamu akan diminta memasukkan API key:
 
-### Set Environment Variable
+```
+🔑 API Key belum dikonfigurasi.
+
+Cara mendapatkan API key:
+  1. Buka https://subsource.net
+  2. Login atau buat akun
+  3. Klik Profile → API Key
+  4. Copy API key yang ditampilkan
+
+Paste API key di sini: ********
+✅ API key tersimpan di: ~/.subdl/config
+```
+
+API key otomatis tersimpan — **tidak perlu input ulang** di lain waktu.
+
+### Alternatif: Environment Variable
 
 ```bash
 # Linux / macOS
@@ -78,7 +93,7 @@ set SUBSOURCE_API_KEY=your_key_here
 $env:SUBSOURCE_API_KEY="your_key_here"
 ```
 
-> 💡 **Tip:** Tambahkan `export SUBSOURCE_API_KEY=your_key_here` ke `~/.bashrc` atau `~/.zshrc` agar tidak perlu set ulang setiap buka terminal.
+> Environment variable selalu diutamakan jika di-set (override config file).
 
 ---
 

@@ -50,6 +50,85 @@ STRIP_TAGS = [
 # Language strings for Indonesian (case-insensitive matching)
 INDONESIAN_LANG_STRINGS = {"indonesian", "indonesia", "id", "bahasa indonesia", "ind"}
 
+# Config file for storing API key
+CONFIG_DIR = Path.home() / ".subdl"
+CONFIG_FILE = CONFIG_DIR / "config"
+
+
+def _load_api_key() -> str:
+    """Load API key dari environment variable atau config file.
+
+    Prioritas:
+    1. Environment variable SUBSOURCE_API_KEY
+    2. Config file ~/.subdl/config
+    """
+    # Cek env var dulu
+    env_key = os.environ.get("SUBSOURCE_API_KEY", "").strip()
+    if env_key:
+        return env_key
+
+    # Cek config file
+    if CONFIG_FILE.exists():
+        try:
+            content = CONFIG_FILE.read_text(encoding="utf-8").strip()
+            for line in content.splitlines():
+                line = line.strip()
+                if line.startswith("api_key="):
+                    key = line[len("api_key="):].strip()  # type: ignore[index]
+                    if key:
+                        return key
+        except OSError:
+            pass
+
+    return ""
+
+
+def _save_api_key(api_key: str) -> bool:
+    """Simpan API key ke config file ~/.subdl/config."""
+    try:
+        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        CONFIG_FILE.write_text(f"api_key={api_key}\n", encoding="utf-8")
+        # Set permission 600 (owner read/write only) untuk keamanan
+        try:
+            CONFIG_FILE.chmod(0o600)
+        except OSError:
+            pass  # Windows might not support chmod
+        return True
+    except OSError as e:
+        print(f"  ⚠  Tidak bisa simpan config: {e}")
+        return False
+
+
+def _prompt_api_key() -> str:
+    """Prompt user untuk memasukkan API key secara interaktif."""
+    print()
+    print("🔑 API Key belum dikonfigurasi.")
+    print()
+    print("Cara mendapatkan API key:")
+    print("  1. Buka https://subsource.net")
+    print("  2. Login atau buat akun")
+    print("  3. Klik Profile → API Key")
+    print("  4. Copy API key yang ditampilkan")
+    print()
+
+    try:
+        api_key = input("Paste API key di sini: ").strip()
+    except (EOFError, KeyboardInterrupt):
+        print("\n⚠  Dibatalkan.")
+        sys.exit(0)
+
+    if not api_key:
+        print("❌ API key tidak boleh kosong.")
+        sys.exit(1)
+
+    # Simpan ke config
+    if _save_api_key(api_key):
+        print(f"✅ API key tersimpan di: {CONFIG_FILE}")
+        print("   Tidak perlu input ulang di lain waktu.")
+    print()
+
+    return api_key
+
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # SubSourceClient
@@ -827,18 +906,10 @@ def main() -> None:
         print(f"❌ Path tidak ditemukan: {args.path}")
         sys.exit(2)
 
-    # Validate API key
-    api_key = os.environ.get("SUBSOURCE_API_KEY", "").strip()
+    # Validate API key (env var → config file → prompt interaktif)
+    api_key = _load_api_key()
     if not api_key:
-        print("❌ SUBSOURCE_API_KEY tidak di-set.")
-        print()
-        print("Cara set API key:")
-        print("  Linux/macOS : export SUBSOURCE_API_KEY=your_key_here")
-        print("  Windows CMD : set SUBSOURCE_API_KEY=your_key_here")
-        print("  PowerShell  : $env:SUBSOURCE_API_KEY=\"your_key_here\"")
-        print()
-        print("Dapatkan API key dari: https://subsource.net (Profile → API Key)")
-        sys.exit(1)
+        api_key = _prompt_api_key()
 
     # Discover video files
     videos = discover_video_files(input_path)
