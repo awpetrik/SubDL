@@ -772,15 +772,20 @@ def build_parser() -> argparse.ArgumentParser:
 def _clean_dragged_path(raw: str) -> str:
     """Bersihkan path hasil drag-and-drop dari terminal.
 
-    Terminal sering menambahkan quotes, trailing whitespace, atau escape characters.
+    macOS Terminal menambahkan backslash escape untuk banyak karakter:
+      /Users/name/My\ Movies\ \(2024\)/file.mkv
+    Linux terminal biasanya menambahkan quotes.
     """
     cleaned = raw.strip()
     # Remove surrounding quotes (single or double)
     if (cleaned.startswith('"') and cleaned.endswith('"')) or \
        (cleaned.startswith("'") and cleaned.endswith("'")):
         cleaned = cleaned[1:-1]  # type: ignore[index]
-    # Remove trailing backslash-space that some terminals add
-    cleaned = cleaned.replace("\\ ", " ")
+    # Remove ALL backslash escapes: \( → (, \ → space, \' → ', etc.
+    # This handles macOS Terminal escaping for spaces, parens, brackets, etc.
+    cleaned = re.sub(r'\\(.)', r'\1', cleaned)
+    # Expand ~ to home directory
+    cleaned = os.path.expanduser(cleaned)
     return cleaned.strip()
 
 
