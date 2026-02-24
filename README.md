@@ -10,13 +10,41 @@ Movie.2025.1080p.WEB-DL.mkv  →  Movie.2025.1080p.WEB-DL.srt
 
 ---
 
-## Prerequisites
+## Quick Install (One-liner)
+
+Jalankan satu perintah ini — otomatis cek Python, install dependencies, dan langsung jalan:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/awpetrik/SubDL/main/subdl.sh | bash
+```
+
+> Script akan menginstall SubDL ke `~/.subdl/` dengan virtual environment sendiri (tidak mengganggu system Python).
+
+### Setelah Install
+
+```bash
+# Tambahkan ke PATH (opsional, agar bisa dipanggil dari mana saja)
+echo 'export PATH="$HOME/.subdl:$PATH"' >> ~/.bashrc
+source ~/.bashrc
+
+# Jalankan
+subdl
+```
+
+---
+
+## Manual Install
+
+Jika lebih suka install manual:
 
 - **Python 3.9+**
 - **pip** (Python package manager)
 
 ```bash
+git clone https://github.com/awpetrik/SubDL.git
+cd SubDL
 pip install -r requirements.txt
+python3 subdl.py
 ```
 
 Dependencies: hanya `requests` — tidak ada dependency tambahan di luar standard library.
@@ -58,8 +86,9 @@ Lalu **drag & drop** file video atau folder ke terminal, tekan Enter:
 
 ```
 ┌─────────────────────────────────────────────┐
-│  🎬  SubSource Sub Downloader (subdl)       │
+│  🎬 SubSource Sub Downloader by awpetrik    │
 │  Download subtitle Indonesia secara instan  │
+│     https://github.com/awpetrik/SubDL       │
 └─────────────────────────────────────────────┘
 
 📂 Drag & drop file video atau folder ke sini, lalu tekan Enter:

@@ -823,7 +823,7 @@ def _clean_dragged_path(raw: str) -> str:
     # Remove surrounding quotes (single or double)
     if (cleaned.startswith('"') and cleaned.endswith('"')) or \
        (cleaned.startswith("'") and cleaned.endswith("'")):
-        cleaned = cleaned[1:-1]
+        cleaned = cleaned[1:-1]  # type: ignore[index]
     # Remove trailing backslash-space that some terminals add
     cleaned = cleaned.replace("\\ ", " ")
     return cleaned.strip()
@@ -842,8 +842,9 @@ def main() -> None:
     if args.path is None:
         print()
         print("┌─────────────────────────────────────────────┐")
-        print("│  🎬  SubSource Sub Downloader (subdl)       │")
-        print("│  Download subtitle Indonesia untuk Jellyfin │")
+        print("│  🎬 SubSource Sub Downloader by awpetrik    │")
+        print("│  Download subtitle Indonesia secara instan  │")
+        print("│     https://github.com/awpetrik/SubDL       │")
         print("└─────────────────────────────────────────────┘")
         print()
         print("📂 Drag & drop file video atau folder ke sini, lalu tekan Enter:")
@@ -858,10 +859,10 @@ def main() -> None:
             print("❌ Tidak ada path yang diberikan.")
             sys.exit(2)
 
-        args.path = _clean_dragged_path(raw_path)
+        args.path = _clean_dragged_path(raw_path)  # type: ignore[attr-defined]
 
     # Validate path
-    input_path = Path(args.path)
+    input_path = Path(args.path)  # type: ignore[attr-defined]
     if not input_path.exists():
         print(f"❌ Path tidak ditemukan: {args.path}")
         sys.exit(2)
