@@ -909,64 +909,18 @@ def _clean_dragged_path(raw: str) -> str:
     return cleaned.strip()
 
 
-def main() -> None:
-    """Entry point utama CLI."""
-    parser = build_parser()
-    args = parser.parse_args()
-
-    # --force implies non-interactive for replace prompts
-    if args.force:
-        pass  # force overrides prompt in process_video directly
-
-    # Interactive mode: no path → prompt drag & drop
-    if args.path is None:
-        print()
-        print("┌─────────────────────────────────────────────┐")
-        print("│  🎬 SubSource Sub Downloader by awpetrik    │")
-        print("│  Download subtitle Indonesia secara instan  │")
-        print("│     https://github.com/awpetrik/SubDL       │")
-        print("└─────────────────────────────────────────────┘")
-        print()
-        print("📂 Drag & drop file video atau folder ke sini, lalu tekan Enter:")
-        print()
-        try:
-            raw_path = input("   ▸ ").strip()
-        except (EOFError, KeyboardInterrupt):
-            print("\n⚠  Dibatalkan.")
-            sys.exit(0)
-
-        if not raw_path:
-            print("❌ Tidak ada path yang diberikan.")
-            sys.exit(2)
-
-        args.path = _clean_dragged_path(raw_path)  # type: ignore[attr-defined]
-
-    # Validate path
-    input_path = Path(args.path)  # type: ignore[attr-defined]
-    if not input_path.exists():
-        print(f"❌ Path tidak ditemukan: {args.path}")
-        sys.exit(2)
-
-    # Validate API key (env var → config file → prompt interaktif)
-    api_key = _load_api_key()
-    if not api_key:
-        api_key = _prompt_api_key()
-
-    # Discover video files
+def _run_session(input_path: Path, client: SubSourceClient, args: argparse.Namespace) -> None:
+    """Proses satu session: discover video files → process masing-masing → print ringkasan."""
     videos = discover_video_files(input_path)
     if not videos:
-        print(f"❌ Tidak ada file video ditemukan di: {args.path}")
+        print(f"❌ Tidak ada file video ditemukan di: {input_path}")
         print(f"   Ekstensi yang didukung: {', '.join(sorted(VIDEO_EXTENSIONS))}")
-        sys.exit(2)
+        return
 
     print(f"🎬 Ditemukan {len(videos)} file video.")
     if args.dry_run:
         print("🔸 Mode DRY RUN aktif — tidak ada file yang akan dimodifikasi.\n")
 
-    # Init client (skip in dry-run? No — we still use it for search in non-dry-run)
-    client = SubSourceClient(api_key=api_key)
-
-    # Process each video
     stats = {"success": 0, "skip": 0, "fail": 0}
 
     for i, video in enumerate(videos, start=1):
@@ -980,7 +934,7 @@ def main() -> None:
             print(f"💥 Error tidak terduga untuk {video.name}: {e}")
             stats["fail"] += 1
 
-    # Final summary
+    # Summary
     print("\n━━━━━━━━━━━━━━━━━━━━━")
     print("📊 Ringkasan:")
     print(f"  ✅ Sukses   : {stats['success']}")
@@ -989,5 +943,75 @@ def main() -> None:
     print("━━━━━━━━━━━━━━━━━━━━━")
 
 
+def main() -> None:
+    """Entry point utama CLI."""
+    parser = build_parser()
+    args = parser.parse_args()
+
+    # --force implies non-interactive for replace prompts
+    if args.force:
+        pass  # force overrides prompt in process_video directly
+
+    # Validate API key (env var → config file → prompt interaktif)
+    api_key = _load_api_key()
+    if not api_key:
+        api_key = _prompt_api_key()
+
+    client = SubSourceClient(api_key=api_key)
+
+    # ── CLI mode: path given as argument → single run ──
+    if args.path is not None:
+        input_path = Path(args.path)
+        if not input_path.exists():
+            print(f"❌ Path tidak ditemukan: {args.path}")
+            sys.exit(2)
+        _run_session(input_path, client, args)
+        return
+
+    # ── Interactive mode: continuous loop ──
+    print()
+    print("┌─────────────────────────────────────────────┐")
+    print("│  🎬 SubSource Sub Downloader by awpetrik    │")
+    print("│  Download subtitle Indonesia secara instan  │")
+    print("│     https://github.com/awpetrik/SubDL       │")
+    print("└─────────────────────────────────────────────┘")
+    print()
+
+    first_run = True
+    while True:
+        if first_run:
+            print("📂 Drag & drop file video atau folder, lalu tekan Enter:")
+            print("   (ketik 'q' untuk keluar)")
+        else:
+            print("\n📂 Drag lagi, atau ketik 'q' untuk keluar:")
+
+        print()
+        try:
+            raw_path = input("   ▸ ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print("\n\n👋 Sampai jumpa!")
+            break
+
+        if not raw_path:
+            print("  ⚠  Tidak ada path. Coba lagi.")
+            continue
+
+        if raw_path.lower() in ("q", "quit", "exit"):
+            print("\n👋 Sampai jumpa!")
+            break
+
+        cleaned = _clean_dragged_path(raw_path)
+        input_path = Path(cleaned)
+
+        if not input_path.exists():
+            print(f"  ❌ Path tidak ditemukan: {cleaned}")
+            print("  Coba drag ulang.")
+            continue
+
+        _run_session(input_path, client, args)
+        first_run = False
+
+
 if __name__ == "__main__":
     main()
+
