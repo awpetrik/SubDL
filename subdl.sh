@@ -157,4 +157,5 @@ echo ""
 # ── Step 8: Run immediately ──
 echo "🚀 Menjalankan SubDL..."
 echo ""
-exec "$PYTHON_CMD" "$INSTALL_DIR/$SCRIPT_NAME" "$@"
+# Redirect stdin from /dev/tty so input() works even when piped via curl | bash
+exec "$PYTHON_CMD" "$INSTALL_DIR/$SCRIPT_NAME" "$@" < /dev/tty
