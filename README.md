@@ -12,22 +12,32 @@ Movie.2025.1080p.WEB-DL.mkv  →  Movie.2025.1080p.WEB-DL.srt
 
 ## Quick Install (One-liner)
 
-Jalankan satu perintah ini — otomatis cek Python, install dependencies, dan langsung jalan:
+Jalankan satu perintah — otomatis cek Python, install dependencies, dan langsung jalan:
 
+**Linux / macOS:**
 ```bash
 curl -sSL https://raw.githubusercontent.com/awpetrik/SubDL/main/subdl.sh | bash
 ```
 
-> Script akan menginstall SubDL ke `~/.subdl/` dengan virtual environment sendiri (tidak mengganggu system Python).
+**Windows (PowerShell):**
+```powershell
+irm https://raw.githubusercontent.com/awpetrik/SubDL/main/subdl.ps1 | iex
+```
+
+> Script akan menginstall SubDL ke `~/.subdl/` (Linux/macOS) atau `%USERPROFILE%\.subdl\` (Windows) dengan virtual environment sendiri.
 
 ### Setelah Install
 
+**Linux / macOS:**
 ```bash
-# Tambahkan ke PATH (opsional, agar bisa dipanggil dari mana saja)
-echo 'export PATH="$HOME/.subdl:$PATH"' >> ~/.bashrc
-source ~/.bashrc
+echo 'export PATH="$HOME/.subdl:$PATH"' >> ~/.bashrc && source ~/.bashrc
+subdl
+```
 
-# Jalankan
+**Windows (PowerShell admin):**
+```powershell
+$p = [Environment]::GetEnvironmentVariable('PATH','User')
+[Environment]::SetEnvironmentVariable('PATH', "$p;$env:USERPROFILE\.subdl", 'User')
 subdl
 ```
 
