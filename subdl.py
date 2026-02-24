@@ -763,43 +763,44 @@ def process_video(video_path: Path, client: SubSourceClient, args: argparse.Name
     video_lower = filename.lower()
 
     def _score_subtitle(sub: Dict[str, Any]) -> float:
-        score: float = 0.0
         rel_info = sub.get("releaseInfo", [])
         rel_str = str(rel_info[0]) if isinstance(rel_info, list) and rel_info else str(rel_info)
         rel_lower = rel_str.lower()
         
-        # 1. Episode Match (+50)
+        ep_score: float = 0.0
+        # 1. Episode Match (+50/-50)
         if video_ep:
             sub_ep = extract_episode_tag(rel_str)
             if sub_ep and video_ep == sub_ep:
-                score = score + 50.0
+                ep_score = 50.0
             elif sub_ep and video_ep != sub_ep:
                 # Penalty explicitly mismatched episode
-                score = score - 50.0
+                ep_score = -50.0
 
+        qual_score: float = 0.0
         # 2. Quality Match (+10)
         qualities = ["web-dl", "webdl", "WEBDL", "WEB", "bluray", "hdrip", "hdtv", "webrb", "webrip", "1080p", "720p", "2160p"]
         for q in qualities:
             if q in video_lower and q in rel_lower:
-                score = score + 10.0
+                qual_score = 10.0
                 break
 
+        codec_score: float = 0.0
         # 3. Codec Match (+10)
         codecs = ["x265", "hevc", "x264", "avc"]
         for c in codecs:
             if c in video_lower and c in rel_lower:
-                score = score + 10.0
+                codec_score = 10.0
                 break
                 
         # 4. Penalty HI (-15)
-        if sub.get("hearingImpaired"):
-            score = score - 15.0
+        hi_penalty: float = -15.0 if sub.get("hearingImpaired") else 0.0
             
         # Tie-breaker: difflib similarity (0 to 1)
-        sim = difflib.SequenceMatcher(None, video_lower, rel_lower).ratio()
+        sim: float = float(difflib.SequenceMatcher(None, video_lower, rel_lower).ratio())
         
         # Save score for display/debugging
-        final_score = score + sim
+        final_score: float = ep_score + qual_score + codec_score + hi_penalty + sim
         sub["_score"] = final_score
         return final_score
 
