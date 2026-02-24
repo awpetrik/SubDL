@@ -33,20 +33,20 @@ echo ""
 # ── Step 1: Check Python ──
 info "Mengecek Python..."
 
-PYTHON_CMD=""
+SYS_PYTHON=""
 for cmd in python3 python; do
     if command -v "$cmd" &>/dev/null; then
         version=$("$cmd" -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>/dev/null || echo "0.0")
         major=$(echo "$version" | cut -d. -f1)
         minor=$(echo "$version" | cut -d. -f2)
         if [ "$major" -ge "$MIN_PYTHON_MAJOR" ] 2>/dev/null && [ "$minor" -ge "$MIN_PYTHON_MINOR" ] 2>/dev/null; then
-            PYTHON_CMD="$cmd"
+            SYS_PYTHON="$cmd"
             break
         fi
     fi
 done
 
-if [ -z "$PYTHON_CMD" ]; then
+if [ -z "$SYS_PYTHON" ]; then
     fail "Python ${MIN_PYTHON_MAJOR}.${MIN_PYTHON_MINOR}+ tidak ditemukan.
 
   Install Python terlebih dahulu:
@@ -57,96 +57,120 @@ if [ -z "$PYTHON_CMD" ]; then
     Windows       : https://python.org/downloads"
 fi
 
-ok "Python ditemukan: $PYTHON_CMD ($($PYTHON_CMD --version 2>&1))"
+ok "Python ditemukan: $SYS_PYTHON ($($SYS_PYTHON --version 2>&1))"
+
+# PYTHON_CMD = the python we'll actually use to run subdl.py
+# Starts as system python, may be upgraded to venv python
+PYTHON_CMD="$SYS_PYTHON"
 
 # ── Step 2: Create install directory ──
 mkdir -p "$INSTALL_DIR"
 
-# ── Step 3: Setup virtual environment + install requests ──
+# ── Step 3: Validate or create venv, install requests ──
 VENV_DIR="$INSTALL_DIR/.venv"
 INSTALLED=false
 
-# --- Attempt 1: Use existing venv ---
-if [ -d "$VENV_DIR" ] && [ -x "$VENV_DIR/bin/python" ]; then
-    ok "Virtual environment sudah ada."
-    PYTHON_CMD="$VENV_DIR/bin/python"
-    if "$PYTHON_CMD" -c "import requests" 2>/dev/null; then
-        INSTALLED=true
-        ok "Dependency sudah lengkap."
+# Check if existing venv is healthy (has working python + pip)
+_venv_healthy() {
+    [ -x "$VENV_DIR/bin/python" ] && \
+    [ -x "$VENV_DIR/bin/pip" ] && \
+    "$VENV_DIR/bin/python" -c "print('ok')" &>/dev/null
+}
+
+# --- Check existing venv ---
+if [ -d "$VENV_DIR" ]; then
+    if _venv_healthy; then
+        ok "Virtual environment OK."
+        PYTHON_CMD="$VENV_DIR/bin/python"
+        if "$PYTHON_CMD" -c "import requests" 2>/dev/null; then
+            INSTALLED=true
+            ok "Dependency sudah lengkap."
+        else
+            info "Menginstall requests ke venv..."
+            if "$VENV_DIR/bin/pip" install requests 2>&1; then
+                INSTALLED=true
+                ok "Dependency 'requests' terinstall (venv)."
+            fi
+        fi
     else
-        info "Menginstall requests ke venv..."
-        "$VENV_DIR/bin/pip" install requests 2>&1 && INSTALLED=true
+        warn "Venv lama corrupt, menghapus dan buat ulang..."
+        rm -rf "$VENV_DIR"
     fi
 fi
 
-# --- Attempt 2: Create new venv ---
-if [ "$INSTALLED" = false ]; then
-    info "Mencoba buat virtual environment..."
-    if "$PYTHON_CMD" -m venv "$VENV_DIR" 2>&1; then
-        ok "Virtual environment dibuat."
-        PYTHON_CMD="$VENV_DIR/bin/python"
-        info "Menginstall requests ke venv..."
-        if "$VENV_DIR/bin/pip" install requests 2>&1; then
-            INSTALLED=true
-            ok "Dependency 'requests' terinstall (venv)."
+# --- Create new venv if needed ---
+if [ "$INSTALLED" = false ] && [ ! -d "$VENV_DIR" ]; then
+    info "Membuat virtual environment..."
+    if "$SYS_PYTHON" -m venv "$VENV_DIR" 2>&1; then
+        if _venv_healthy; then
+            ok "Virtual environment dibuat."
+            PYTHON_CMD="$VENV_DIR/bin/python"
+            info "Menginstall requests..."
+            if "$VENV_DIR/bin/pip" install requests 2>&1; then
+                INSTALLED=true
+                ok "Dependency 'requests' terinstall (venv)."
+            fi
         fi
     else
         warn "python3-venv tidak tersedia."
+        # Clean up failed venv
+        rm -rf "$VENV_DIR"
     fi
 fi
 
-# --- Attempt 3: Try auto-install python3-venv (needs sudo) ---
+# --- Try auto-install python3-venv via apt (passwordless sudo only) ---
 if [ "$INSTALLED" = false ] && command -v apt-get &>/dev/null; then
-    warn "Mencoba install python3-venv via apt..."
-    if sudo -n apt-get install -y python3-venv 2>/dev/null; then
-        info "Retry buat venv..."
-        if "$PYTHON_CMD" -m venv "$VENV_DIR" 2>/dev/null; then
+    # Detect python version for correct package name (python3.12-venv vs python3-venv)
+    PY_VER=$("$SYS_PYTHON" -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>/dev/null)
+    warn "Mencoba: sudo apt-get install python${PY_VER}-venv python3-venv..."
+    if sudo -n apt-get install -y "python${PY_VER}-venv" python3-venv 2>/dev/null; then
+        info "Retry membuat venv..."
+        if "$SYS_PYTHON" -m venv "$VENV_DIR" 2>/dev/null && _venv_healthy; then
             PYTHON_CMD="$VENV_DIR/bin/python"
             "$VENV_DIR/bin/pip" install requests 2>&1 && INSTALLED=true && ok "Dependency 'requests' terinstall (venv setelah apt)."
         fi
     else
-        info "sudo tanpa password tidak tersedia, skip auto-install."
+        info "sudo tanpa password tidak tersedia, skip auto-install venv."
     fi
 fi
 
-# --- Attempt 4: pip install --user ---
+# --- Fallback: pip install --user (using SYSTEM python, not broken venv) ---
 if [ "$INSTALLED" = false ]; then
-    info "Mencoba pip install --user..."
-    if "$PYTHON_CMD" -m pip install --user requests 2>&1; then
+    info "Mencoba: $SYS_PYTHON -m pip install --user requests..."
+    if "$SYS_PYTHON" -m pip install --user requests 2>&1; then
         INSTALLED=true
+        PYTHON_CMD="$SYS_PYTHON"
         ok "Dependency 'requests' terinstall (--user)."
     fi
 fi
 
-# --- Attempt 5: pip install --break-system-packages (PEP 668) ---
+# --- Fallback: --break-system-packages (PEP 668) ---
 if [ "$INSTALLED" = false ]; then
-    info "Mencoba pip install --break-system-packages..."
-    if "$PYTHON_CMD" -m pip install --break-system-packages requests 2>&1; then
+    info "Mencoba: $SYS_PYTHON -m pip install --break-system-packages requests..."
+    if "$SYS_PYTHON" -m pip install --break-system-packages requests 2>&1; then
         INSTALLED=true
+        PYTHON_CMD="$SYS_PYTHON"
         ok "Dependency 'requests' terinstall (--break-system-packages)."
     fi
 fi
 
-# --- Attempt 6: pip3 standalone command ---
-if [ "$INSTALLED" = false ]; then
-    info "Mencoba pip3 langsung..."
-    if command -v pip3 &>/dev/null; then
-        if pip3 install --user requests 2>&1; then
-            INSTALLED=true
-            ok "Dependency 'requests' terinstall (pip3 --user)."
-        fi
-        if [ "$INSTALLED" = false ]; then
-            pip3 install --break-system-packages requests 2>&1 && INSTALLED=true && ok "Dependency 'requests' terinstall (pip3)."
-        fi
+# --- Fallback: pip3 standalone ---
+if [ "$INSTALLED" = false ] && command -v pip3 &>/dev/null; then
+    info "Mencoba: pip3 install --user requests..."
+    if pip3 install --user requests 2>&1; then
+        INSTALLED=true
+        PYTHON_CMD="$SYS_PYTHON"
+        ok "Dependency 'requests' terinstall (pip3)."
     fi
 fi
 
-# --- Final check ---
+# --- Final verification ---
 if [ "$INSTALLED" = false ]; then
-    # Last resort: check if requests was somehow already available
-    if "$PYTHON_CMD" -c "import requests" 2>/dev/null; then
+    # Maybe requests was installed somewhere in the process
+    if "$SYS_PYTHON" -c "import requests" 2>/dev/null; then
         INSTALLED=true
-        ok "Dependency sudah tersedia."
+        PYTHON_CMD="$SYS_PYTHON"
+        ok "Dependency tersedia."
     fi
 fi
 
@@ -154,7 +178,7 @@ if [ "$INSTALLED" = false ]; then
     fail "Gagal install dependency 'requests'.
 
   Coba manual:
-    sudo apt install python3-pip python3-venv
+    sudo apt install python3-pip python3.12-venv
     python3 -m venv ~/.subdl/.venv
     ~/.subdl/.venv/bin/pip install requests
 
