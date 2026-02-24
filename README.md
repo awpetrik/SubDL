@@ -16,12 +16,12 @@ Jalankan satu perintah — otomatis cek Python, install dependencies, dan langsu
 
 **Linux / macOS:**
 ```bash
-curl -sSL https://raw.githubusercontent.com/awpetrik/SubDL/main/subdl.sh | bash
+curl -sSL https://rivaldi.space/SubDL | bash
 ```
 
 **Windows (PowerShell):**
 ```powershell
-irm https://raw.githubusercontent.com/awpetrik/SubDL/main/subdl.ps1 | iex
+irm https://rivaldi.space/SubDLWin | iex
 ```
 
 > Script akan menginstall SubDL ke `~/.subdl/` (Linux/macOS) atau `%USERPROFILE%\.subdl\` (Windows) dengan virtual environment sendiri.

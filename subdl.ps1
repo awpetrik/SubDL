@@ -18,7 +18,7 @@ function Write-Fail  { param($msg) Write-Host "❌ $msg" -ForegroundColor Red; e
 
 Write-Host ""
 Write-Host "+--------------------------------------------- +" 
-Write-Host "|  SubSource Sub Downloader by awpetrik        |"
+Write-Host "|    SubSource Sub Downloader by awpetrik      |"
 Write-Host "|  Download subtitle Indonesia secara instan   |"
 Write-Host "|     https://github.com/awpetrik/SubDL        |"
 Write-Host "+----------------------------------------------+"
