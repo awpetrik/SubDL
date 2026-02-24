@@ -483,57 +483,39 @@ def _format_movie_choice(idx: int, movie: Dict[str, Any]) -> str:
     return f"[{idx + 1}] {title} ({year}) — {mtype}"
 
 
-def _get_subtitle_release(sub: Dict[str, Any]) -> str:
-    """Extract release string dari subtitle item."""
+def _format_subtitle_choice(idx: int, sub: Dict[str, Any]) -> str:
+    """Format 1 item subtitle untuk ditampilkan di list pilihan."""
+    # Release info — bisa list atau string
     release: Any = sub.get("releaseInfo", [])
     if isinstance(release, list):
         release_str = ", ".join(str(r) for r in list(release)[0:3])  # type: ignore[index]
     else:
         release_str = str(release)[0:60]  # type: ignore[index]
-    return release_str if release_str else "N/A"
 
+    if not release_str:
+        release_str = "N/A"
 
-def _get_subtitle_rating(sub: Dict[str, Any]) -> str:
-    """Extract rating string dari subtitle item."""
+    parts = [f"[{idx + 1}] {release_str}"]
+
+    # Rating
     rating = sub.get("rating")
     if rating and isinstance(rating, dict):
         good = rating.get("good", 0)
         total = rating.get("total", 0)
         if total > 0:
-            return f"{good}/{total}"
-    return "-"
+            parts.append(f"⭐ {good}/{total}")
 
+    # Hearing impaired
+    hi = sub.get("hearingImpaired")
+    if hi is not None:
+        parts.append(f"HI: {'Yes' if hi else 'No'}")
 
-def _print_subtitle_table(subs: List[Dict[str, Any]], header: str) -> None:
-    """Print daftar subtitle dalam format tabel yang rapi."""
-    print(header)
+    # Downloads
+    downloads = sub.get("downloads")
+    if downloads is not None:
+        parts.append(f"DL: {downloads}")
 
-    # Collect row data
-    rows = []
-    for i, sub in enumerate(subs):
-        release = _get_subtitle_release(sub)
-        rating = _get_subtitle_rating(sub)
-        hi_val = sub.get("hearingImpaired")
-        hi_str = "Yes" if hi_val else "No" if hi_val is not None else "-"
-        downloads = sub.get("downloads")
-        dl_str = str(downloads) if downloads is not None else "-"
-        rows.append((str(i + 1), release, rating, hi_str, dl_str))
-
-    # Calculate column widths
-    headers = ("#", "Release", "Rating", "HI", "Downloads")
-    widths = [len(h) for h in headers]
-    for row in rows:
-        for j, val in enumerate(row):
-            widths[j] = max(widths[j], len(val))
-
-    # Print header + separator + rows
-    fmt = "  {:<{w0}}  {:<{w1}}  {:<{w2}}  {:<{w3}}  {:<{w4}}"
-    sep = "  " + "  ".join("-" * w for w in widths)
-    print(fmt.format(*headers, w0=widths[0], w1=widths[1], w2=widths[2], w3=widths[3], w4=widths[4]))
-    print(sep)
-    for row in rows:
-        print(fmt.format(*row, w0=widths[0], w1=widths[1], w2=widths[2], w3=widths[3], w4=widths[4]))
-    print()
+    return " | ".join(parts)
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -638,38 +620,11 @@ def process_video(video_path: Path, client: SubSourceClient, args: argparse.Name
 
     # --- Pilih subtitle ---
     display_subs: List[Dict[str, Any]] = list(filtered)[0:20]  # type: ignore[index]
+    sub_choices = [_format_subtitle_choice(i, s) for i, s in enumerate(display_subs)]
     sub_prompt = f"Subtitle tersedia ({len(filtered)} total):"
 
-    if args.non_interactive:
-        sub_idx: Optional[int] = 0
-    else:
-        _print_subtitle_table(display_subs, sub_prompt)
-        max_retries = 3
-        sub_idx = 0  # default
-        for _ in range(max_retries):
-            try:
-                choice = input(f"Pilih [1-{len(display_subs)}] (default 1, 's' untuk skip): ").strip()
-            except (EOFError, KeyboardInterrupt):
-                sub_idx = None
-                break
-            if choice == "":
-                sub_idx = 0
-                break
-            if choice.lower() in ("s", "skip"):
-                sub_idx = None
-                break
-            try:
-                idx = int(choice) - 1
-                if 0 <= idx < len(display_subs):
-                    sub_idx = idx
-                    break
-                else:
-                    print(f"  ⚠  Input di luar range 1-{len(display_subs)}. Coba lagi.")
-            except ValueError:
-                print(f"  ⚠  Input tidak valid. Masukkan angka 1-{len(display_subs)}, atau 's' untuk skip.")
-        else:
-            print("  ⏭  Terlalu banyak percobaan, skip.")
-            sub_idx = None
+    sub_idx = choose_from_list(sub_choices, sub_prompt, default_index=0,
+                               non_interactive=args.non_interactive)
 
     if sub_idx is None:
         print("  ⏭  Skip.")

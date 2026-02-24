@@ -169,11 +169,9 @@ Pilih [1-2] (default 1, 's' untuk skip): 1
 📋 Memilih judul: Inception (2010) — Movie
 📑 Mengambil daftar subtitle...
 Subtitle tersedia (3 total):
-  #  Release                           Rating  HI   Downloads
-  -  --------------------------------  ------  ---  ---------
-  1  Inception.2010.1080p.BluRay.x264  12/14   No   3421
-  2  Inception.2010.720p.WEB-DL        8/9     No   1205
-  3  Inception.2010.REMUX              5/6     Yes  890
+  [1] Inception.2010.1080p.BluRay.x264 | ⭐ 12/14 | HI: No | DL: 3421
+  [2] Inception.2010.720p.WEB-DL | ⭐ 8/9 | HI: No | DL: 1205
+  [3] Inception.2010.REMUX | ⭐ 5/6 | HI: Yes | DL: 890
 
 Pilih [1-3] (default 1, 's' untuk skip): 1
 ⬇  Mengunduh subtitle #10124960...
@@ -205,10 +203,8 @@ Pilih [1-1] (default 1, 's' untuk skip): 1
 📋 Memilih judul: The Batman (2022) — Movie
 📑 Mengambil daftar subtitle...
 Subtitle tersedia (2 total):
-  #  Release                          Rating  HI   Downloads
-  -  -------------------------------- ------  ---  ---------
-  1  The.Batman.2022.1080p.WEB-DL     10/11   No   5602
-  2  The.Batman.2022.2160p.UHD        7/8     No   2301
+  [1] The.Batman.2022.1080p.WEB-DL | ⭐ 10/11 | HI: No | DL: 5602
+  [2] The.Batman.2022.2160p.UHD | ⭐ 7/8 | HI: No | DL: 2301
 
 Pilih [1-2] (default 1, 's' untuk skip): 1
 ⬇  Mengunduh subtitle #9876543...
