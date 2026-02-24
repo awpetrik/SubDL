@@ -3,12 +3,10 @@
 # SubDL — One-liner installer & runner
 # Usage: curl -sSL https://raw.githubusercontent.com/awpetrik/SubDL/main/subdl.sh | bash
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-set -euo pipefail
 
 REPO_RAW="https://raw.githubusercontent.com/awpetrik/SubDL/main"
 INSTALL_DIR="$HOME/.subdl"
 SCRIPT_NAME="subdl.py"
-REQUIREMENTS="requests"
 MIN_PYTHON_MAJOR=3
 MIN_PYTHON_MINOR=9
 
@@ -38,11 +36,10 @@ info "Mengecek Python..."
 PYTHON_CMD=""
 for cmd in python3 python; do
     if command -v "$cmd" &>/dev/null; then
-        # Check version
         version=$("$cmd" -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>/dev/null || echo "0.0")
         major=$(echo "$version" | cut -d. -f1)
         minor=$(echo "$version" | cut -d. -f2)
-        if [ "$major" -ge "$MIN_PYTHON_MAJOR" ] && [ "$minor" -ge "$MIN_PYTHON_MINOR" ]; then
+        if [ "$major" -ge "$MIN_PYTHON_MAJOR" ] 2>/dev/null && [ "$minor" -ge "$MIN_PYTHON_MINOR" ] 2>/dev/null; then
             PYTHON_CMD="$cmd"
             break
         fi
@@ -60,110 +57,112 @@ if [ -z "$PYTHON_CMD" ]; then
     Windows       : https://python.org/downloads"
 fi
 
-ok "Python ditemukan: $PYTHON_CMD ($("$PYTHON_CMD" --version 2>&1))"
+ok "Python ditemukan: $PYTHON_CMD ($($PYTHON_CMD --version 2>&1))"
 
 # ── Step 2: Create install directory ──
 mkdir -p "$INSTALL_DIR"
 
-# ── Step 3: Setup virtual environment ──
+# ── Step 3: Setup virtual environment + install requests ──
 VENV_DIR="$INSTALL_DIR/.venv"
-USE_VENV=false
+INSTALLED=false
 
-_try_create_venv() {
-    if "$PYTHON_CMD" -m venv "$VENV_DIR" 2>/dev/null; then
-        PYTHON_CMD="$VENV_DIR/bin/python"
-        PIP_CMD="$VENV_DIR/bin/pip"
-        USE_VENV=true
-        return 0
-    fi
-    return 1
-}
-
+# --- Attempt 1: Use existing venv ---
 if [ -d "$VENV_DIR" ] && [ -x "$VENV_DIR/bin/python" ]; then
-    # Existing venv
-    PYTHON_CMD="$VENV_DIR/bin/python"
-    PIP_CMD="$VENV_DIR/bin/pip"
-    USE_VENV=true
     ok "Virtual environment sudah ada."
-else
-    info "Membuat virtual environment..."
-    if _try_create_venv; then
-        ok "Virtual environment siap."
+    PYTHON_CMD="$VENV_DIR/bin/python"
+    if "$PYTHON_CMD" -c "import requests" 2>/dev/null; then
+        INSTALLED=true
+        ok "Dependency sudah lengkap."
     else
-        warn "python3-venv tidak tersedia. Mencoba install otomatis..."
+        info "Menginstall requests ke venv..."
+        "$VENV_DIR/bin/pip" install requests 2>&1 && INSTALLED=true
+    fi
+fi
 
-        # Auto-install python3-venv
-        if command -v apt-get &>/dev/null; then
-            info "Menjalankan: sudo apt-get install -y python3-venv"
-            sudo apt-get install -y python3-venv 2>/dev/null && _try_create_venv && ok "Virtual environment siap (setelah install python3-venv)."
-        elif command -v dnf &>/dev/null; then
-            sudo dnf install -y python3-pip 2>/dev/null
-        elif command -v pacman &>/dev/null; then
-            sudo pacman -S --noconfirm python-pip 2>/dev/null
+# --- Attempt 2: Create new venv ---
+if [ "$INSTALLED" = false ]; then
+    info "Mencoba buat virtual environment..."
+    if "$PYTHON_CMD" -m venv "$VENV_DIR" 2>&1; then
+        ok "Virtual environment dibuat."
+        PYTHON_CMD="$VENV_DIR/bin/python"
+        info "Menginstall requests ke venv..."
+        if "$VENV_DIR/bin/pip" install requests 2>&1; then
+            INSTALLED=true
+            ok "Dependency 'requests' terinstall (venv)."
         fi
+    else
+        warn "python3-venv tidak tersedia."
+    fi
+fi
 
-        if [ "$USE_VENV" = false ]; then
-            warn "Tidak bisa buat venv. Menggunakan pip langsung."
-            PIP_CMD="$PYTHON_CMD -m pip"
+# --- Attempt 3: Try auto-install python3-venv (needs sudo) ---
+if [ "$INSTALLED" = false ] && command -v apt-get &>/dev/null; then
+    warn "Mencoba install python3-venv via apt..."
+    if sudo -n apt-get install -y python3-venv 2>/dev/null; then
+        info "Retry buat venv..."
+        if "$PYTHON_CMD" -m venv "$VENV_DIR" 2>/dev/null; then
+            PYTHON_CMD="$VENV_DIR/bin/python"
+            "$VENV_DIR/bin/pip" install requests 2>&1 && INSTALLED=true && ok "Dependency 'requests' terinstall (venv setelah apt)."
+        fi
+    else
+        info "sudo tanpa password tidak tersedia, skip auto-install."
+    fi
+fi
+
+# --- Attempt 4: pip install --user ---
+if [ "$INSTALLED" = false ]; then
+    info "Mencoba pip install --user..."
+    if "$PYTHON_CMD" -m pip install --user requests 2>&1; then
+        INSTALLED=true
+        ok "Dependency 'requests' terinstall (--user)."
+    fi
+fi
+
+# --- Attempt 5: pip install --break-system-packages (PEP 668) ---
+if [ "$INSTALLED" = false ]; then
+    info "Mencoba pip install --break-system-packages..."
+    if "$PYTHON_CMD" -m pip install --break-system-packages requests 2>&1; then
+        INSTALLED=true
+        ok "Dependency 'requests' terinstall (--break-system-packages)."
+    fi
+fi
+
+# --- Attempt 6: pip3 standalone command ---
+if [ "$INSTALLED" = false ]; then
+    info "Mencoba pip3 langsung..."
+    if command -v pip3 &>/dev/null; then
+        if pip3 install --user requests 2>&1; then
+            INSTALLED=true
+            ok "Dependency 'requests' terinstall (pip3 --user)."
+        fi
+        if [ "$INSTALLED" = false ]; then
+            pip3 install --break-system-packages requests 2>&1 && INSTALLED=true && ok "Dependency 'requests' terinstall (pip3)."
         fi
     fi
 fi
 
-# ── Step 4: Install dependencies ──
-info "Mengecek dependencies..."
-
-if "$PYTHON_CMD" -c "import requests" 2>/dev/null; then
-    ok "Dependency sudah lengkap."
-else
-    info "Menginstall requests..."
-    INSTALLED=false
-
-    # Method 1: pip dalam venv (paling bersih)
-    if [ "$USE_VENV" = true ]; then
-        if $PIP_CMD install --quiet requests 2>/dev/null; then
-            INSTALLED=true
-        fi
+# --- Final check ---
+if [ "$INSTALLED" = false ]; then
+    # Last resort: check if requests was somehow already available
+    if "$PYTHON_CMD" -c "import requests" 2>/dev/null; then
+        INSTALLED=true
+        ok "Dependency sudah tersedia."
     fi
+fi
 
-    # Method 2: pip install --user
-    if [ "$INSTALLED" = false ]; then
-        if "$PYTHON_CMD" -m pip install --quiet --user requests 2>/dev/null; then
-            INSTALLED=true
-        fi
-    fi
-
-    # Method 3: pip install --break-system-packages (PEP 668 distros)
-    if [ "$INSTALLED" = false ]; then
-        if "$PYTHON_CMD" -m pip install --quiet --break-system-packages requests 2>/dev/null; then
-            INSTALLED=true
-        fi
-    fi
-
-    # Method 4: Install pip dulu kalau belum ada, lalu coba lagi
-    if [ "$INSTALLED" = false ]; then
-        warn "pip tidak tersedia atau gagal. Mencoba install pip..."
-        if command -v apt-get &>/dev/null; then
-            sudo apt-get install -y python3-pip 2>/dev/null
-        fi
-        if "$PYTHON_CMD" -m pip install --quiet --user requests 2>/dev/null; then
-            INSTALLED=true
-        fi
-    fi
-
-    if [ "$INSTALLED" = true ]; then
-        ok "Dependency 'requests' terinstall."
-    else
-        fail "Gagal install dependency 'requests'.
+if [ "$INSTALLED" = false ]; then
+    fail "Gagal install dependency 'requests'.
 
   Coba manual:
-    pip3 install requests
-  atau:
     sudo apt install python3-pip python3-venv
-    pip3 install requests"
-    fi
+    python3 -m venv ~/.subdl/.venv
+    ~/.subdl/.venv/bin/pip install requests
+
+  Atau:
+    pip3 install --user requests"
 fi
 
-# ── Step 5: Download subdl.py ──
+# ── Step 4: Download subdl.py ──
 info "Mendownload SubDL..."
 
 DOWNLOAD_CMD=""
@@ -172,17 +171,17 @@ if command -v curl &>/dev/null; then
 elif command -v wget &>/dev/null; then
     DOWNLOAD_CMD="wget -qO-"
 else
-    fail "curl atau wget tidak ditemukan. Install salah satu terlebih dahulu."
+    fail "curl atau wget tidak ditemukan."
 fi
 
-$DOWNLOAD_CMD "$REPO_RAW/$SCRIPT_NAME" > "$INSTALL_DIR/$SCRIPT_NAME" || {
+if ! $DOWNLOAD_CMD "$REPO_RAW/$SCRIPT_NAME" > "$INSTALL_DIR/$SCRIPT_NAME"; then
     fail "Gagal download $SCRIPT_NAME dari GitHub."
-}
+fi
 
 chmod +x "$INSTALL_DIR/$SCRIPT_NAME"
 ok "SubDL terinstall di: $INSTALL_DIR/$SCRIPT_NAME"
 
-# ── Step 6: Create launcher alias ──
+# ── Step 5: Create launcher ──
 LAUNCHER="$INSTALL_DIR/subdl"
 cat > "$LAUNCHER" << 'LAUNCHER_EOF'
 #!/usr/bin/env bash
@@ -196,7 +195,7 @@ fi
 LAUNCHER_EOF
 chmod +x "$LAUNCHER"
 
-# ── Step 7: Add to PATH (suggest) ──
+# ── Step 6: Done ──
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 ok "Instalasi selesai!"
@@ -214,8 +213,7 @@ echo "    export SUBSOURCE_API_KEY=your_key_here"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
-# ── Step 8: Run immediately ──
+# ── Step 7: Run immediately ──
 echo "🚀 Menjalankan SubDL..."
 echo ""
-# Redirect stdin from /dev/tty so input() works even when piped via curl | bash
 exec "$PYTHON_CMD" "$INSTALL_DIR/$SCRIPT_NAME" "$@" < /dev/tty
