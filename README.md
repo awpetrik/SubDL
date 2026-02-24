@@ -1,5 +1,9 @@
 # SubSource Sub Downloader (`subdl`)
 
+<p align="center">
+<img width="1206" height="860" alt="image" src="https://github.com/user-attachments/assets/e68cabb4-ec28-43f7-af97-1a3aab3afa01" />
+</p>
+
 CLI tool untuk download subtitle Indonesia dari [SubSource.net](https://subsource.net) 
 
 Nama file subtitle otomatis match PERSIS dengan nama file video (hanya beda ekstensi), sehingga Jellyfin langsung auto-recognize tanpa konfigurasi tambahan.
