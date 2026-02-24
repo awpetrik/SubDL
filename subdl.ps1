@@ -140,21 +140,46 @@ if exist "%SCRIPT_DIR%.venv\Scripts\python.exe" (
 "@
 Set-Content -Path $launcherBat -Value $batContent -Encoding ASCII
 
-# ── Step 7: Add to PATH (suggest) ──
+# ── Step 7: Auto-add to PATH ──
+$pathAdded = $false
+try {
+    $currentPath = [Environment]::GetEnvironmentVariable('PATH', 'User')
+    if (($currentPath -split ';') -contains $INSTALL_DIR) {
+        Write-Ok "SubDL sudah ada di PATH User."
+        $pathAdded = $true
+    } else {
+        Write-Info "Menambahkan SubDL ke PATH User..."
+        $newPath = "$currentPath;$INSTALL_DIR"
+        [Environment]::SetEnvironmentVariable('PATH', $newPath, 'User')
+        
+        # Update session PATH so it works immediately in current window
+        $env:PATH = "$env:PATH;$INSTALL_DIR"
+        
+        Write-Ok "PATH berhasil ditambahkan."
+        $pathAdded = $true
+    }
+} catch {
+    Write-Warn "Gagal menambahkan ke PATH secara otomatis: $_"
+}
+
+# ── Step 8: Done ──
 Write-Host ""
 Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" 
 Write-Ok "Instalasi selesai!"
 Write-Host ""
-Write-Host "  Jalankan sekarang:"
-Write-Host "    $launcherBat"
+if ($pathAdded) {
+    Write-Host "  Ketik 'subdl' kapan saja untuk menjalankan."
+    Write-Host "  (Buka PowerShell baru jika perintah belum dikenali)"
+} else {
+    Write-Host "  Tambahkan ke PATH manual:"
+    Write-Host "    `$p = [Environment]::GetEnvironmentVariable('PATH','User')"
+    Write-Host "    [Environment]::SetEnvironmentVariable('PATH', `"`$p;$INSTALL_DIR`", 'User')"
+    Write-Host ""
+    Write-Host "  Atau jalankan manual:"
+    Write-Host "    $launcherBat"
+}
 Write-Host ""
-Write-Host "  Atau tambahkan ke PATH (PowerShell admin):"
-Write-Host "    `$oldPath = [Environment]::GetEnvironmentVariable('PATH', 'User')"
-Write-Host "    [Environment]::SetEnvironmentVariable('PATH', `"`$oldPath;$INSTALL_DIR`", 'User')"
-Write-Host "    subdl   # langsung bisa!"
-Write-Host ""
-Write-Host "  Jangan lupa set API key:"
-Write-Host '    $env:SUBSOURCE_API_KEY="your_key_here"'
+Write-Host "  API key akan diminta otomatis saat pertama kali jalan."
 Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 Write-Host ""
 

@@ -23,27 +23,12 @@ Jalankan satu perintah — otomatis cek Python, install dependencies, dan langsu
 curl -sSL https://rivaldi.space/SubDL | bash
 ```
 
-**Windows (PowerShell):** (Belum di test, please tell me if it works)
+**Windows (PowerShell):** (Belum di test, please tell me if it doesn't works or error)
 ```powershell
 irm https://rivaldi.space/SubDLWin | iex
 ```
 
-> Script akan menginstall SubDL ke `~/.subdl/` (Linux/macOS) atau `%USERPROFILE%\.subdl\` (Windows) dengan virtual environment sendiri.
-
-### Setelah Install
-
-**Linux / macOS:**
-```bash
-echo 'export PATH="$HOME/.subdl:$PATH"' >> ~/.bashrc && source ~/.bashrc
-subdl
-```
-
-**Windows (PowerShell admin):**
-```powershell
-$p = [Environment]::GetEnvironmentVariable('PATH','User')
-[Environment]::SetEnvironmentVariable('PATH', "$p;$env:USERPROFILE\.subdl", 'User')
-subdl
-```
+> Script akan menginstall SubDL ke `~/.subdl/` (Linux/macOS) atau `%USERPROFILE%\.subdl\` (Windows) dengan virtual environment di dalamnya. Installer juga akan **otomatis menambahkan `subdl` ke PATH**, sehingga kamu bisa langsung menjalankannya dari terminal manapun.
 
 ---
 

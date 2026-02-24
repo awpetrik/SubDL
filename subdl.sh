@@ -219,21 +219,76 @@ fi
 LAUNCHER_EOF
 chmod +x "$LAUNCHER"
 
-# ── Step 6: Done ──
+# ── Step 6: Auto-add to PATH ──
+PATH_ENTRY='export PATH="$HOME/.subdl:$PATH"'
+PATH_ADDED=false
+
+# Check if already in PATH
+if echo "$PATH" | tr ':' '\n' | grep -q "$INSTALL_DIR"; then
+    ok "SubDL sudah ada di PATH."
+    PATH_ADDED=true
+fi
+
+if [ "$PATH_ADDED" = false ]; then
+    # Detect shell config file
+    SHELL_NAME=$(basename "${SHELL:-/bin/bash}")
+    RC_FILE=""
+
+    case "$SHELL_NAME" in
+        zsh)
+            RC_FILE="$HOME/.zshrc"
+            ;;
+        bash)
+            # macOS uses .bash_profile, Linux uses .bashrc
+            if [ "$(uname)" = "Darwin" ]; then
+                RC_FILE="$HOME/.bash_profile"
+            else
+                RC_FILE="$HOME/.bashrc"
+            fi
+            ;;
+        fish)
+            RC_FILE="$HOME/.config/fish/config.fish"
+            PATH_ENTRY="set -gx PATH \$HOME/.subdl \$PATH"
+            ;;
+        *)
+            RC_FILE="$HOME/.profile"
+            ;;
+    esac
+
+    info "Menambahkan SubDL ke PATH ($SHELL_NAME → $RC_FILE)..."
+
+    # Check if entry already exists in rc file
+    if [ -f "$RC_FILE" ] && grep -q '.subdl' "$RC_FILE" 2>/dev/null; then
+        ok "PATH entry sudah ada di $RC_FILE."
+        PATH_ADDED=true
+    else
+        # Append to rc file
+        if echo "" >> "$RC_FILE" && echo "# SubDL" >> "$RC_FILE" && echo "$PATH_ENTRY" >> "$RC_FILE"; then
+            ok "PATH ditambahkan ke $RC_FILE."
+            PATH_ADDED=true
+            # Apply to current session
+            export PATH="$INSTALL_DIR:$PATH"
+        else
+            warn "Tidak bisa menulis ke $RC_FILE."
+            echo "  Tambahkan manual:"
+            echo "    echo '$PATH_ENTRY' >> $RC_FILE"
+        fi
+    fi
+fi
+
+# ── Step 7: Done ──
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 ok "Instalasi selesai!"
 echo ""
-echo "  Jalankan sekarang:"
-echo "    $LAUNCHER"
+if [ "$PATH_ADDED" = true ]; then
+    echo "  Ketik 'subdl' kapan saja untuk menjalankan."
+    echo "  (Buka terminal baru jika perintah belum dikenali)"
+else
+    echo "  Jalankan: $LAUNCHER"
+fi
 echo ""
-echo "  Atau tambahkan ke PATH agar bisa dipanggil dari mana saja:"
-echo "    echo 'export PATH=\"\$HOME/.subdl:\$PATH\"' >> ~/.bashrc"
-echo "    source ~/.bashrc"
-echo "    subdl   # langsung bisa!"
-echo ""
-echo "  Jangan lupa set API key:"
-echo "    export SUBSOURCE_API_KEY=your_key_here"
+echo "  API key akan diminta otomatis saat pertama kali jalan."
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
