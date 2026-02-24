@@ -14,16 +14,16 @@ Movie.2025.1080p.WEB-DL.mkv  →  Movie.2025.1080p.WEB-DL.srt
 
 ---
 
-## Quick Install (One-liner)
+## Quick Install (EXPERIMENTAL)
 
 Jalankan satu perintah — otomatis cek Python, install dependencies, dan langsung jalan:
 
-**Linux / macOS:**
+**Linux / macOS:** (Tested on Linux)
 ```bash
 curl -sSL https://rivaldi.space/SubDL | bash
 ```
 
-**Windows (PowerShell):**
+**Windows (PowerShell):** (Belum di test, please tell me if it works)
 ```powershell
 irm https://rivaldi.space/SubDLWin | iex
 ```
