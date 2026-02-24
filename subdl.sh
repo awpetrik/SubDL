@@ -67,40 +67,100 @@ mkdir -p "$INSTALL_DIR"
 
 # ── Step 3: Setup virtual environment ──
 VENV_DIR="$INSTALL_DIR/.venv"
+USE_VENV=false
 
-if [ ! -d "$VENV_DIR" ]; then
-    info "Membuat virtual environment..."
-    "$PYTHON_CMD" -m venv "$VENV_DIR" 2>/dev/null || {
-        warn "python3-venv tidak tersedia. Mencoba install tanpa venv..."
-        VENV_DIR=""
-    }
-fi
+_try_create_venv() {
+    if "$PYTHON_CMD" -m venv "$VENV_DIR" 2>/dev/null; then
+        PYTHON_CMD="$VENV_DIR/bin/python"
+        PIP_CMD="$VENV_DIR/bin/pip"
+        USE_VENV=true
+        return 0
+    fi
+    return 1
+}
 
-if [ -n "$VENV_DIR" ] && [ -d "$VENV_DIR" ]; then
-    # Use venv python
+if [ -d "$VENV_DIR" ] && [ -x "$VENV_DIR/bin/python" ]; then
+    # Existing venv
     PYTHON_CMD="$VENV_DIR/bin/python"
     PIP_CMD="$VENV_DIR/bin/pip"
-    ok "Virtual environment siap."
+    USE_VENV=true
+    ok "Virtual environment sudah ada."
 else
-    # Fallback: use system pip
-    PIP_CMD="$PYTHON_CMD -m pip"
+    info "Membuat virtual environment..."
+    if _try_create_venv; then
+        ok "Virtual environment siap."
+    else
+        warn "python3-venv tidak tersedia. Mencoba install otomatis..."
+
+        # Auto-install python3-venv
+        if command -v apt-get &>/dev/null; then
+            info "Menjalankan: sudo apt-get install -y python3-venv"
+            sudo apt-get install -y python3-venv 2>/dev/null && _try_create_venv && ok "Virtual environment siap (setelah install python3-venv)."
+        elif command -v dnf &>/dev/null; then
+            sudo dnf install -y python3-pip 2>/dev/null
+        elif command -v pacman &>/dev/null; then
+            sudo pacman -S --noconfirm python-pip 2>/dev/null
+        fi
+
+        if [ "$USE_VENV" = false ]; then
+            warn "Tidak bisa buat venv. Menggunakan pip langsung."
+            PIP_CMD="$PYTHON_CMD -m pip"
+        fi
+    fi
 fi
 
 # ── Step 4: Install dependencies ──
 info "Mengecek dependencies..."
 
-if ! "$PYTHON_CMD" -c "import requests" &>/dev/null; then
-    info "Menginstall requests..."
-    $PIP_CMD install --quiet "$REQUIREMENTS" 2>/dev/null || {
-        # Try with --user flag if venv failed
-        "$PYTHON_CMD" -m pip install --quiet --user "$REQUIREMENTS" 2>/dev/null || {
-            fail "Gagal install dependency 'requests'.
-  Coba manual: pip3 install requests"
-        }
-    }
-    ok "Dependency 'requests' terinstall."
-else
+if "$PYTHON_CMD" -c "import requests" 2>/dev/null; then
     ok "Dependency sudah lengkap."
+else
+    info "Menginstall requests..."
+    INSTALLED=false
+
+    # Method 1: pip dalam venv (paling bersih)
+    if [ "$USE_VENV" = true ]; then
+        if $PIP_CMD install --quiet requests 2>/dev/null; then
+            INSTALLED=true
+        fi
+    fi
+
+    # Method 2: pip install --user
+    if [ "$INSTALLED" = false ]; then
+        if "$PYTHON_CMD" -m pip install --quiet --user requests 2>/dev/null; then
+            INSTALLED=true
+        fi
+    fi
+
+    # Method 3: pip install --break-system-packages (PEP 668 distros)
+    if [ "$INSTALLED" = false ]; then
+        if "$PYTHON_CMD" -m pip install --quiet --break-system-packages requests 2>/dev/null; then
+            INSTALLED=true
+        fi
+    fi
+
+    # Method 4: Install pip dulu kalau belum ada, lalu coba lagi
+    if [ "$INSTALLED" = false ]; then
+        warn "pip tidak tersedia atau gagal. Mencoba install pip..."
+        if command -v apt-get &>/dev/null; then
+            sudo apt-get install -y python3-pip 2>/dev/null
+        fi
+        if "$PYTHON_CMD" -m pip install --quiet --user requests 2>/dev/null; then
+            INSTALLED=true
+        fi
+    fi
+
+    if [ "$INSTALLED" = true ]; then
+        ok "Dependency 'requests' terinstall."
+    else
+        fail "Gagal install dependency 'requests'.
+
+  Coba manual:
+    pip3 install requests
+  atau:
+    sudo apt install python3-pip python3-venv
+    pip3 install requests"
+    fi
 fi
 
 # ── Step 5: Download subdl.py ──
