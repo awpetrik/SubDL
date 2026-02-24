@@ -164,14 +164,13 @@ class SubSourceClient:
         url = API_BASE_URL + path
         last_exc: Optional[BaseException] = None
 
-        for attempt in range(3):  # Max 3 attempts (1 original + 2 retries)
+        for attempt in range(3):  # Max 3 attempts
             try:
                 resp = self.session.request(
                     method, url, params=params, timeout=self.timeout, stream=stream
                 )
 
-                # Handle HTTP errors
-                if resp.status_code == 401 or resp.status_code == 403:
+                if resp.status_code in (401, 403):
                     print(f"❌ API key invalid atau expired. Set env var: export SUBSOURCE_API_KEY=your_key")
                     return resp
 
@@ -188,7 +187,7 @@ class SubSourceClient:
                 if 500 <= resp.status_code < 600:
                     if attempt < 2:
                         backoff = [1, 3][attempt]
-                        print(f"🔄 Server error ({resp.status_code}). Retry {attempt + 1}/2...")
+                        print(f"🔄 Server error ({resp.status_code}). Retry {attempt + 1}/3...")
                         time.sleep(backoff)
                         continue
                     else:
@@ -201,15 +200,15 @@ class SubSourceClient:
                 last_exc = e
                 if attempt < 2:
                     backoff = [0.5, 1.5][attempt]
-                    print(f"🔄 Retry {attempt + 1}/2...")
+                    print(f"🔄 Timeout/Koneksi gagal. Retry {attempt + 1}/3...")
                     time.sleep(backoff)
                 else:
-                    raise
-
-        # Should not reach here, but just in case
-        if last_exc:
-            raise last_exc  # type: ignore[misc]
-        raise RuntimeError("Unexpected retry exhaustion")
+                    print(f"❌ Gagal koneksi ke SubSource setelah 3 percobaan.")
+                    
+        # Return fallback pseudo-response (not strictly typed but caught upstream)
+        err_resp = requests.Response()
+        err_resp.status_code = 503
+        return err_resp
 
     def search_titles(self, query: str, year: Optional[int] = None) -> List[Dict[str, Any]]:
         """Search film/series di SubSource.
@@ -319,6 +318,14 @@ class SubSourceClient:
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # Helper Functions
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+def extract_episode_tag(filename: str) -> Optional[str]:
+    """Ekstrak tag episode (misal S01E01, 1x01, E01) dari teks."""
+    match = re.search(r'\b(S\d{1,2}E\d{1,2}|E\d{1,2}|\d{1,2}x\d{2,3})\b', filename, re.IGNORECASE)
+    if match:
+        return match.group(1).upper()
+    return None
+
 
 def parse_title_year(filename: str) -> tuple[str, Optional[int]]:
     """Parse judul dan tahun dari filename video.
@@ -509,19 +516,22 @@ def extract_srt_from_zip(zip_bytes: bytes, video_stem: str) -> Optional[bytes]:
         return zf.read(srt_files[0])
 
     # Multiple SRT files → pilih yang paling mirip nama dengan video
-    best_match: Optional[str] = None
-    best_ratio = -1.0
-    for srt_name in srt_files:
+    video_ep = extract_episode_tag(video_stem)
+
+    def _score_extracted_srt(srt_name: str) -> float:
         srt_stem = Path(srt_name).stem
-        ratio = difflib.SequenceMatcher(None, video_stem.lower(), srt_stem.lower()).ratio()
-        if ratio > best_ratio:
-            best_ratio = ratio
-            best_match = srt_name
+        score = 0.0
+        if video_ep:
+            srt_ep = extract_episode_tag(srt_stem)
+            if srt_ep and video_ep == srt_ep:
+                score = score + 50.0
+            elif srt_ep and video_ep != srt_ep:
+                score = score - 50.0
+        
+        sim = difflib.SequenceMatcher(None, video_stem.lower(), srt_stem.lower()).ratio()
+        return score + sim
 
-    if best_match is not None:
-        return zf.read(best_match)  # type: ignore[arg-type]
-
-    # Fallback: file pertama
+    srt_files.sort(key=_score_extracted_srt, reverse=True)
     return zf.read(srt_files[0])
 
 
@@ -535,13 +545,14 @@ def save_srt_atomic(target_path: Path, data: bytes) -> bool:
     Returns:
         True kalau sukses, False kalau gagal
     """
-    tmp_path = target_path.parent / (target_path.name + ".tmp")
+    tmp_path = target_path.with_suffix(".srt.tmp")
     try:
         tmp_path.write_bytes(data)
-        os.replace(str(tmp_path), str(target_path))
+        # atomic rename on POSIX systems
+        tmp_path.replace(target_path)
         return True
     except PermissionError:
-        print(f"  ❌ Tidak bisa tulis ke {target_path}: permission denied. Skip.")
+        print(f"  ❌ Tidak bisa tulis ke {target_path}: permission denied. (Coba check ownership folder)")
         _cleanup_tmp(tmp_path)
         return False
     except OSError as e:
@@ -618,7 +629,9 @@ def _print_subtitle_table(subs: List[Dict[str, Any]], header: str) -> None:
 
 def process_video(video_path: Path, client: SubSourceClient, args: argparse.Namespace,
                   index: int = 1, total: int = 1,
-                  title_cache: Optional[Dict[str, Dict[str, Any]]] = None) -> str:
+                  title_cache: Optional[Dict[str, Dict[str, Any]]] = None,
+                  subtitle_cache: Optional[Dict[int, List[Dict[str, Any]]]] = None,
+                  conflict_action: Optional[List[str]] = None) -> str:
     """Proses 1 file video: search → pilih → list subtitles → download → save.
 
     Returns: "success" | "skip" | "fail"
@@ -630,13 +643,28 @@ def process_video(video_path: Path, client: SubSourceClient, args: argparse.Name
 
     # --- Cek subtitle existing ---
     if target_srt.exists() and not args.force:
-        try:
-            answer = input(f"⚠  Subtitle sudah ada untuk {filename}. Replace? (y/n): ").strip().lower()
-        except (EOFError, KeyboardInterrupt):
-            answer = ""
-        if answer != "y":
-            print("⏭  Skip.")
+        if conflict_action and conflict_action[0] == "replace_all":
+            pass  # Force replace
+        elif conflict_action and conflict_action[0] == "skip_all":
+            print("  ⏭  Skip (Skip All aktif).")
             return "skip"
+        else:
+            try:
+                answer = input(f"⚠  Subtitle sudah ada untuk {filename}.\n   [y] Replace, [n] Skip, [a] Replace All, [s] Skip All: ").strip().lower()
+            except (EOFError, KeyboardInterrupt):
+                answer = "n"
+            
+            if answer == "a":
+                if conflict_action is not None:
+                    conflict_action[0] = "replace_all"
+            elif answer == "s":
+                if conflict_action is not None:
+                    conflict_action[0] = "skip_all"
+                print("  ⏭  Skip.")
+                return "skip"
+            elif answer != "y":
+                print("  ⏭  Skip.")
+                return "skip"
 
     # --- Parse judul & tahun ---
     title, year = parse_title_year(filename)
@@ -701,13 +729,20 @@ def process_video(video_path: Path, client: SubSourceClient, args: argparse.Name
     print(f"📋 Memilih judul: {movie_title} ({movie_year}) — {movie_type}")
 
     # --- List subtitles ---
-    print(f"📑 Mengambil daftar subtitle...")
+    if subtitle_cache is None:
+        subtitle_cache = {}
 
-    try:
-        subtitles = client.list_subtitles(content_id, language="indonesian")
-    except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
-        print(f"  ❌ Network error saat list subtitles: {e}")
-        return "fail"
+    if content_id in subtitle_cache:
+        subtitles = subtitle_cache[content_id]
+        print(f"📑 Menggunakan daftar subtitle dari cache...")
+    else:
+        print(f"📑 Mengambil daftar subtitle...")
+        try:
+            subtitles = client.list_subtitles(content_id, language="indonesian")
+            subtitle_cache[content_id] = subtitles
+        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
+            print(f"  ❌ Network error saat list subtitles: {e}")
+            return "fail"
 
     if args.verbose and subtitles:
         print(f"  🔧 [VERBOSE] Subtitles response: {json.dumps(subtitles, default=str)[0:500]}")  # type: ignore[index]
@@ -723,48 +758,95 @@ def process_video(video_path: Path, client: SubSourceClient, args: argparse.Name
         print(f"  ❌ Tidak ada subtitle Indonesia format SRT.")
         return "fail"
 
-    # --- Urutkan subtitle berdasarkan kemiripan dengan nama file video ---
-    def _sub_similarity(sub: Dict[str, Any]) -> float:
+    # --- Auto-Matching & Scoring ---
+    video_ep = extract_episode_tag(filename)
+    video_lower = filename.lower()
+
+    def _score_subtitle(sub: Dict[str, Any]) -> float:
+        score: float = 0.0
         rel_info = sub.get("releaseInfo", [])
         rel_str = str(rel_info[0]) if isinstance(rel_info, list) and rel_info else str(rel_info)
-        return difflib.SequenceMatcher(None, filename.lower(), rel_str.lower()).ratio()
+        rel_lower = rel_str.lower()
+        
+        # 1. Episode Match (+50)
+        if video_ep:
+            sub_ep = extract_episode_tag(rel_str)
+            if sub_ep and video_ep == sub_ep:
+                score = score + 50.0
+            elif sub_ep and video_ep != sub_ep:
+                # Penalty explicitly mismatched episode
+                score = score - 50.0
 
-    filtered.sort(key=_sub_similarity, reverse=True)
+        # 2. Quality Match (+10)
+        qualities = ["web-dl", "webdl", "WEBDL", "WEB", "bluray", "hdrip", "hdtv", "webrb", "webrip", "1080p", "720p", "2160p"]
+        for q in qualities:
+            if q in video_lower and q in rel_lower:
+                score = score + 10.0
+                break
+
+        # 3. Codec Match (+10)
+        codecs = ["x265", "hevc", "x264", "avc"]
+        for c in codecs:
+            if c in video_lower and c in rel_lower:
+                score = score + 10.0
+                break
+                
+        # 4. Penalty HI (-15)
+        if sub.get("hearingImpaired"):
+            score = score - 15.0
+            
+        # Tie-breaker: difflib similarity (0 to 1)
+        sim = difflib.SequenceMatcher(None, video_lower, rel_lower).ratio()
+        
+        # Save score for display/debugging
+        final_score = score + sim
+        sub["_score"] = final_score
+        return final_score
+
+    filtered.sort(key=_score_subtitle, reverse=True)
 
     # --- Pilih subtitle ---
     display_subs: List[Dict[str, Any]] = list(filtered)[0:20]  # type: ignore[index]
     sub_prompt = f"Subtitle tersedia ({len(filtered)} total):"
 
-    if args.non_interactive:
-        sub_idx: Optional[int] = 0
-    else:
-        _print_subtitle_table(display_subs, sub_prompt)
-        max_retries = 3
+    sub_idx = None
+    best_sub = display_subs[0] if display_subs else None
+
+    # Auto-match threshold check
+    if best_sub and best_sub.get("_score", 0) >= 50:
+        if not args.non_interactive:
+            print(f"  ✨ Auto-match! Skor {best_sub.get('_score', 0):.2f} (Episode {video_ep})")
         sub_idx = 0
-        for _ in range(max_retries):
-            try:
-                choice = input(f"Pilih [1-{len(display_subs)}] (default 1, 's' untuk skip): ").strip()
-            except (EOFError, KeyboardInterrupt):
-                sub_idx = None
-                break
-            if choice == "":
-                sub_idx = 0
-                break
-            if choice.lower() in ("s", "skip"):
-                sub_idx = None
-                break
-            try:
-                idx = int(choice) - 1
-                if 0 <= idx < len(display_subs):
-                    sub_idx = idx
-                    break
-                else:
-                    print(f"  ⚠  Input di luar range 1-{len(display_subs)}. Coba lagi.")
-            except ValueError:
-                print(f"  ⚠  Input tidak valid. Masukkan angka 1-{len(display_subs)}, atau 's' untuk skip.")
+    else:
+        if args.non_interactive:
+            sub_idx = 0
         else:
-            print("  ⏭  Terlalu banyak percobaan, skip.")
-            sub_idx = None
+            _print_subtitle_table(display_subs, sub_prompt)
+            max_retries = 3
+            for _ in range(max_retries):
+                try:
+                    choice = input(f"Pilih [1-{len(display_subs)}] (default 1, 's' untuk skip): ").strip()
+                except (EOFError, KeyboardInterrupt):
+                    sub_idx = None
+                    break
+                if choice == "":
+                    sub_idx = 0
+                    break
+                if choice.lower() in ("s", "skip"):
+                    sub_idx = None
+                    break
+                try:
+                    idx = int(choice) - 1
+                    if 0 <= idx < len(display_subs):
+                        sub_idx = idx
+                        break
+                    else:
+                        print(f"  ⚠  Input di luar range 1-{len(display_subs)}. Coba lagi.")
+                except ValueError:
+                    print(f"  ⚠  Input tidak valid. Masukkan angka 1-{len(display_subs)}, atau 's' untuk skip.")
+            else:
+                print("  ⏭  Terlalu banyak percobaan, skip.")
+                sub_idx = None
 
     if sub_idx is None:
         print("  ⏭  Skip.")
@@ -824,11 +906,22 @@ def discover_video_files(path: Path) -> List[Path]:
     Returns:
         List of Path, sorted alphabetically
     """
+    def _is_valid_video(p: Path) -> bool:
+        name = p.name
+        # Skip hidden files and macOS AppleDouble metadata files
+        if name.startswith("."):
+            return False
+        # Optional: skip sample, extras, trailer
+        lower_name = name.lower()
+        if "sample" in lower_name or "extras" in lower_name or "trailer" in lower_name:
+            return False
+        return True
+
     if path.is_file():
-        if path.suffix.lower() in VIDEO_EXTENSIONS:
+        if path.suffix.lower() in VIDEO_EXTENSIONS and _is_valid_video(path):
             return [path]
         else:
-            print(f"⚠  '{path.name}' bukan file video yang didukung.")
+            print(f"⚠  '{path.name}' bukan file video yang didukung, atau di-skip.")
             print(f"   Ekstensi yang didukung: {', '.join(sorted(VIDEO_EXTENSIONS))}")
             return []
 
@@ -839,14 +932,15 @@ def discover_video_files(path: Path) -> List[Path]:
             # Also handle uppercase extensions
             videos.extend(path.rglob(f"*{ext.upper()}"))
 
-        # Deduplicate (in case of case-insensitive filesystem)
+        # Deduplicate (in case of case-insensitive filesystem) and filter
         seen = set()
         unique_videos = []
         for v in videos:
             resolved = v.resolve()
             if resolved not in seen:
                 seen.add(resolved)
-                unique_videos.append(v)
+                if _is_valid_video(v):
+                    unique_videos.append(v)
 
         # Sort alphabetically
         unique_videos.sort(key=lambda p: str(p).lower())
@@ -943,10 +1037,14 @@ def _run_session(input_path: Path, client: SubSourceClient, args: argparse.Names
 
     stats = {"success": 0, "skip": 0, "fail": 0}
     session_title_cache: Dict[str, Dict[str, Any]] = {}
+    session_sub_cache: Dict[int, List[Dict[str, Any]]] = {}
+    session_conflict_action: List[str] = ["prompt"]
 
     for i, video in enumerate(videos, start=1):
         try:
-            result = process_video(video, client, args, index=i, total=len(videos), title_cache=session_title_cache)
+            result = process_video(video, client, args, index=i, total=len(videos), 
+                                   title_cache=session_title_cache, subtitle_cache=session_sub_cache,
+                                   conflict_action=session_conflict_action)
             stats[result] = stats.get(result, 0) + 1
         except KeyboardInterrupt:
             print("\n\n⚠  Dibatalkan oleh user.")
