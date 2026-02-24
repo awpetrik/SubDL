@@ -66,7 +66,7 @@ PYTHON_CMD="$SYS_PYTHON"
 # ── Step 2: Create install directory ──
 mkdir -p "$INSTALL_DIR"
 
-# ── Step 3: Validate or create venv, install requests ──
+# ── Step 3: Validate or create venv, install requests rich ──
 VENV_DIR="$INSTALL_DIR/.venv"
 INSTALLED=false
 
@@ -82,14 +82,14 @@ if [ -d "$VENV_DIR" ]; then
     if _venv_healthy; then
         ok "Virtual environment OK."
         PYTHON_CMD="$VENV_DIR/bin/python"
-        if "$PYTHON_CMD" -c "import requests" 2>/dev/null; then
+        if "$PYTHON_CMD" -c "import requests, rich" 2>/dev/null; then
             INSTALLED=true
             ok "Dependency sudah lengkap."
         else
-            info "Menginstall requests ke venv..."
-            if "$VENV_DIR/bin/pip" install requests 2>&1; then
+            info "Menginstall requests rich ke venv..."
+            if "$VENV_DIR/bin/pip" install requests rich 2>&1; then
                 INSTALLED=true
-                ok "Dependency 'requests' terinstall (venv)."
+                ok "Dependency terinstall (venv)."
             fi
         fi
     else
@@ -105,10 +105,10 @@ if [ "$INSTALLED" = false ] && [ ! -d "$VENV_DIR" ]; then
         if _venv_healthy; then
             ok "Virtual environment dibuat."
             PYTHON_CMD="$VENV_DIR/bin/python"
-            info "Menginstall requests..."
-            if "$VENV_DIR/bin/pip" install requests 2>&1; then
+            info "Menginstall requests rich..."
+            if "$VENV_DIR/bin/pip" install requests rich 2>&1; then
                 INSTALLED=true
-                ok "Dependency 'requests' terinstall (venv)."
+                ok "Dependency terinstall (venv)."
             fi
         fi
     else
@@ -127,7 +127,7 @@ if [ "$INSTALLED" = false ] && command -v apt-get &>/dev/null; then
         info "Retry membuat venv..."
         if "$SYS_PYTHON" -m venv "$VENV_DIR" 2>/dev/null && _venv_healthy; then
             PYTHON_CMD="$VENV_DIR/bin/python"
-            "$VENV_DIR/bin/pip" install requests 2>&1 && INSTALLED=true && ok "Dependency 'requests' terinstall (venv setelah apt)."
+            "$VENV_DIR/bin/pip" install requests rich 2>&1 && INSTALLED=true && ok "Dependency terinstall (venv setelah apt)."
         fi
     else
         info "sudo tanpa password tidak tersedia, skip auto-install venv."
@@ -140,7 +140,7 @@ if [ "$INSTALLED" = false ]; then
     if "$SYS_PYTHON" -m pip install --user requests 2>&1; then
         INSTALLED=true
         PYTHON_CMD="$SYS_PYTHON"
-        ok "Dependency 'requests' terinstall (--user)."
+        ok "Dependency terinstall (--user)."
     fi
 fi
 
@@ -150,7 +150,7 @@ if [ "$INSTALLED" = false ]; then
     if "$SYS_PYTHON" -m pip install --break-system-packages requests 2>&1; then
         INSTALLED=true
         PYTHON_CMD="$SYS_PYTHON"
-        ok "Dependency 'requests' terinstall (--break-system-packages)."
+        ok "Dependency terinstall (--break-system-packages)."
     fi
 fi
 
@@ -160,14 +160,14 @@ if [ "$INSTALLED" = false ] && command -v pip3 &>/dev/null; then
     if pip3 install --user requests 2>&1; then
         INSTALLED=true
         PYTHON_CMD="$SYS_PYTHON"
-        ok "Dependency 'requests' terinstall (pip3)."
+        ok "Dependency terinstall (pip3)."
     fi
 fi
 
 # --- Final verification ---
 if [ "$INSTALLED" = false ]; then
     # Maybe requests was installed somewhere in the process
-    if "$SYS_PYTHON" -c "import requests" 2>/dev/null; then
+    if "$SYS_PYTHON" -c "import requests, rich" 2>/dev/null; then
         INSTALLED=true
         PYTHON_CMD="$SYS_PYTHON"
         ok "Dependency tersedia."
@@ -180,7 +180,7 @@ if [ "$INSTALLED" = false ]; then
   Coba manual:
     sudo apt install python3-pip python3.12-venv
     python3 -m venv ~/.subdl/.venv
-    ~/.subdl/.venv/bin/pip install requests
+    ~/.subdl/.venv/bin/pip install requests rich
 
   Atau:
     pip3 install --user requests"

@@ -93,12 +93,12 @@ Write-Info "Mengecek dependencies..."
 
 $hasRequests = $false
 try {
-    & $pythonCmd -c "import requests" 2>$null
+    & $pythonCmd -c "import requests, rich" 2>$null
     if ($LASTEXITCODE -eq 0) { $hasRequests = $true }
 } catch {}
 
 if (-not $hasRequests) {
-    Write-Info "Menginstall requests..."
+    Write-Info "Menginstall requests rich..."
     try {
         if ($useVenv) {
             & $pipCmd install --quiet $REQUIREMENTS 2>$null
@@ -107,7 +107,7 @@ if (-not $hasRequests) {
         }
         Write-Ok "Dependency 'requests' terinstall."
     } catch {
-        Write-Fail "Gagal install dependency 'requests'. Coba manual: pip install requests"
+        Write-Fail "Gagal install dependency 'requests'. Coba manual: pip install requests rich"
     }
 } else {
     Write-Ok "Dependency sudah lengkap."

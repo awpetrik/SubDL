@@ -22,6 +22,10 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, cast
 
 import requests  # type: ignore[import-untyped]
+from rich.console import Console  # type: ignore[import-untyped]
+from rich.table import Table  # type: ignore[import-untyped]
+
+console = Console()
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # Constants — Diverifikasi dari .NET wrapper resmi:
@@ -562,39 +566,49 @@ def _format_movie_choice(idx: int, movie: Dict[str, Any]) -> str:
     return f"[{idx + 1}] {title} ({year}) — {mtype}"
 
 
-def _format_subtitle_choice(idx: int, sub: Dict[str, Any]) -> str:
-    """Format 1 item subtitle untuk ditampilkan di list pilihan."""
-    # Release info — bisa list atau string
-    release: Any = sub.get("releaseInfo", [])
-    if isinstance(release, list):
-        release_str = ", ".join(str(r) for r in list(release)[0:3])  # type: ignore[index]
-    else:
-        release_str = str(release)[0:60]  # type: ignore[index]
+def _print_subtitle_table(subs: List[Dict[str, Any]], header: str) -> None:
+    """Print daftar subtitle dalam rich table yang rapi."""
+    print(header)
 
-    if not release_str:
-        release_str = "N/A"
+    table = Table(show_header=True, header_style="bold cyan", box=None,
+                  pad_edge=False, padding=(0, 1))
+    table.add_column("#", style="bold", width=3, justify="right")
+    table.add_column("Release", style="white", min_width=20, max_width=50, no_wrap=False)
+    table.add_column("Rating", style="yellow", width=7, justify="center")
+    table.add_column("HI", width=4, justify="center")
+    table.add_column("DL", style="dim", width=6, justify="right")
 
-    parts = [f"[{idx + 1}] {release_str}"]
+    for i, sub in enumerate(subs):
+        # Release info
+        release: Any = sub.get("releaseInfo", [])
+        if isinstance(release, list):
+            release_str = ", ".join(str(r) for r in list(release)[0:3])  # type: ignore[index]
+        else:
+            release_str = str(release)[0:80]  # type: ignore[index]
+        if not release_str:
+            release_str = "N/A"
 
-    # Rating
-    rating = sub.get("rating")
-    if rating and isinstance(rating, dict):
-        good = rating.get("good", 0)
-        total = rating.get("total", 0)
-        if total > 0:
-            parts.append(f"⭐ {good}/{total}")
+        # Rating
+        rating_str = "-"
+        rating = sub.get("rating")
+        if rating and isinstance(rating, dict):
+            good = rating.get("good", 0)
+            total = rating.get("total", 0)
+            if total > 0:
+                rating_str = f"{good}/{total}"
 
-    # Hearing impaired
-    hi = sub.get("hearingImpaired")
-    if hi is not None:
-        parts.append(f"HI: {'Yes' if hi else 'No'}")
+        # HI
+        hi = sub.get("hearingImpaired")
+        hi_str = "Yes" if hi else "No" if hi is not None else "-"
 
-    # Downloads
-    downloads = sub.get("downloads")
-    if downloads is not None:
-        parts.append(f"DL: {downloads}")
+        # Downloads
+        downloads = sub.get("downloads")
+        dl_str = str(downloads) if downloads is not None else "-"
 
-    return " | ".join(parts)
+        table.add_row(str(i + 1), release_str, rating_str, hi_str, dl_str)
+
+    console.print(table)
+    print()
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -699,11 +713,38 @@ def process_video(video_path: Path, client: SubSourceClient, args: argparse.Name
 
     # --- Pilih subtitle ---
     display_subs: List[Dict[str, Any]] = list(filtered)[0:20]  # type: ignore[index]
-    sub_choices = [_format_subtitle_choice(i, s) for i, s in enumerate(display_subs)]
     sub_prompt = f"Subtitle tersedia ({len(filtered)} total):"
 
-    sub_idx = choose_from_list(sub_choices, sub_prompt, default_index=0,
-                               non_interactive=args.non_interactive)
+    if args.non_interactive:
+        sub_idx: Optional[int] = 0
+    else:
+        _print_subtitle_table(display_subs, sub_prompt)
+        max_retries = 3
+        sub_idx = 0
+        for _ in range(max_retries):
+            try:
+                choice = input(f"Pilih [1-{len(display_subs)}] (default 1, 's' untuk skip): ").strip()
+            except (EOFError, KeyboardInterrupt):
+                sub_idx = None
+                break
+            if choice == "":
+                sub_idx = 0
+                break
+            if choice.lower() in ("s", "skip"):
+                sub_idx = None
+                break
+            try:
+                idx = int(choice) - 1
+                if 0 <= idx < len(display_subs):
+                    sub_idx = idx
+                    break
+                else:
+                    print(f"  ⚠  Input di luar range 1-{len(display_subs)}. Coba lagi.")
+            except ValueError:
+                print(f"  ⚠  Input tidak valid. Masukkan angka 1-{len(display_subs)}, atau 's' untuk skip.")
+        else:
+            print("  ⏭  Terlalu banyak percobaan, skip.")
+            sub_idx = None
 
     if sub_idx is None:
         print("  ⏭  Skip.")
