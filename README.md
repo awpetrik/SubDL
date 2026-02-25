@@ -163,22 +163,6 @@ python3 subdl.py /media/movies/Movie.mkv --verbose
 
 ---
 
-## Changing Language
-
-By default, SubDL downloads **Indonesian** subtitles (`--lang id`). You can download subtitles in other languages by passing the language code:
-
-```bash
-# Download English subtitles
-python3 subdl.py /path/to/video.mkv --lang en
-
-# Download Spanish subtitles
-python3 subdl.py /path/to/video.mkv --lang es
-```
-
-Supported common codes include: `id` (Indonesian), `en` (English), `es` (Spanish), `fr` (French), `de` (German), etc. If a specific code is not mapped, the tool will pass the value directly to the SubSource API.
-
----
-
 ## Contoh Output Terminal
 
 ### ✅ Skenario SUCCESS — 1 file berhasil, replace prompt dijawab `y`
