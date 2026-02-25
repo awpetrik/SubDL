@@ -51,8 +51,27 @@ STRIP_TAGS = [
     "NF", "AMZN", "HULU", "DSNP", "ATVP", "MAX",
 ]
 
-# Language strings for Indonesian (case-insensitive matching)
-INDONESIAN_LANG_STRINGS = {"indonesian", "indonesia", "id", "bahasa indonesia", "ind"}
+# Language mappings for API and filtering
+LANG_MAP = {
+    "id": "indonesian",
+    "en": "english",
+    "es": "spanish",
+    "fr": "french",
+    "de": "german",
+    "it": "italian",
+    "pt": "portuguese",
+    "vi": "vietnamese",
+    "th": "thai",
+    "ja": "japanese",
+    "ko": "korean",
+    "zh": "chinese",
+}
+
+# Substrings to match for each language (case-insensitive)
+LANG_MATCH_STRINGS = {
+    "indonesian": {"indonesian", "indonesia", "id", "bahasa indonesia", "ind"},
+    "english": {"english", "eng", "en"},
+}
 
 # Config file for storing API key
 CONFIG_DIR = Path.home() / ".subdl"
@@ -442,17 +461,24 @@ def choose_from_list(items: List[str], prompt: str, default_index: int = 0,
     return None
 
 
-def is_indonesian(lang_string: str) -> bool:
-    """Cek apakah string bahasa menunjukkan Indonesia.
+def is_target_language(lang_string: str, target_lang_code: str) -> bool:
+    """Cek apakah string bahasa menunjukkan bahasa target.
 
-    Menggunakan substring match case-insensitive terhadap daftar yang diketahui:
-    "indonesian", "indonesia", "id", "bahasa indonesia", "ind"
+    Menggunakan substring match case-insensitive terhadap daftar yang diketahui.
     """
     if not lang_string:
         return False
+    
     lower = lang_string.lower().strip()
-    for indo_str in INDONESIAN_LANG_STRINGS:
-        if indo_str in lower or lower in indo_str:
+    
+    # Get full language name if it's a code (e.g. 'id' -> 'indonesian')
+    full_lang = LANG_MAP.get(target_lang_code.lower(), target_lang_code.lower())
+    
+    # Check against match strings if we have them
+    match_strings = LANG_MATCH_STRINGS.get(full_lang, {full_lang})
+    
+    for match_str in match_strings:
+        if match_str in lower or lower in match_str:
             return True
     return False
 
@@ -736,9 +762,11 @@ def process_video(video_path: Path, client: SubSourceClient, args: argparse.Name
         subtitles = subtitle_cache[content_id]
         print(f"📑 Menggunakan daftar subtitle dari cache...")
     else:
-        print(f"📑 Mengambil daftar subtitle...")
+        lang_code = str(args.lang).lower()
+        target_api_lang = str(LANG_MAP.get(lang_code, lang_code))
+        print(f"📑 Mengambil daftar subtitle ({target_api_lang})...")
         try:
-            subtitles = client.list_subtitles(content_id, language="indonesian")
+            subtitles = client.list_subtitles(content_id, language=target_api_lang)
             subtitle_cache[content_id] = subtitles
         except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
             print(f"  ❌ Network error saat list subtitles: {e}")
@@ -747,15 +775,17 @@ def process_video(video_path: Path, client: SubSourceClient, args: argparse.Name
     if args.verbose and subtitles:
         print(f"  🔧 [VERBOSE] Subtitles response: {json.dumps(subtitles, default=str)[0:500]}")  # type: ignore[index]
 
-    # --- Filter: Indonesian + SRT ---
+    # --- Filter: Target Language + SRT ---
     filtered: List[Dict[str, Any]] = []
+    lang_code = str(args.lang).lower()
     for sub in subtitles:
         lang = sub.get("language", "")
-        if is_indonesian(lang) and is_srt(sub):
+        if is_target_language(lang, lang_code) and is_srt(sub):
             filtered.append(sub)
 
     if not filtered:
-        print(f"  ❌ Tidak ada subtitle Indonesia format SRT.")
+        target_display = str(LANG_MAP.get(lang_code, lang_code)).capitalize()
+        print(f"  ❌ Tidak ada subtitle {target_display} format SRT.")
         return "fail"
 
     # --- Auto-Matching & Scoring ---

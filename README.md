@@ -4,6 +4,14 @@
 <img width="1206" height="860" alt="image" src="https://github.com/user-attachments/assets/e68cabb4-ec28-43f7-af97-1a3aab3afa01" />
 </p>
 
+<p align="center">
+  <img src="https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python" />
+  <img src="https://img.shields.io/badge/Requests-066F24?style=for-the-badge&logo=python&logoColor=white" alt="Requests" />
+  <img src="https://img.shields.io/badge/Rich-000000?style=for-the-badge&logo=python&logoColor=white" alt="Rich" />
+</p>
+
+[English](README_EN.md) | Bahasa Indonesia
+
 CLI tool untuk download subtitle Indonesia dari [SubSource.net](https://subsource.net) 
 
 Nama file subtitle otomatis match PERSIS dengan nama file video (hanya beda ekstensi), sehingga Jellyfin langsung auto-recognize tanpa konfigurasi tambahan.
@@ -152,6 +160,22 @@ python3 subdl.py /media/movies/ --dry-run
 # Debug mode
 python3 subdl.py /media/movies/Movie.mkv --verbose
 ```
+
+---
+
+## Changing Language
+
+By default, SubDL downloads **Indonesian** subtitles (`--lang id`). You can download subtitles in other languages by passing the language code:
+
+```bash
+# Download English subtitles
+python3 subdl.py /path/to/video.mkv --lang en
+
+# Download Spanish subtitles
+python3 subdl.py /path/to/video.mkv --lang es
+```
+
+Supported common codes include: `id` (Indonesian), `en` (English), `es` (Spanish), `fr` (French), `de` (German), etc. If a specific code is not mapped, the tool will pass the value directly to the SubSource API.
 
 ---
 
